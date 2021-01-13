@@ -1,0 +1,330 @@
+---
+title: "Examining the media trends of Rohingya Crisis 2010-2021"
+output: github_document
+editor_options: 
+  chunk_output_type: console
+author: Michelle Lee
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(patchwork)
+library(readr)
+library(broom)
+library(dbplyr)
+library(viridis)
+library(reshape2)
+library(plotly)
+library(lubridate)
+
+knitr::opts_chunk$set(
+	echo = TRUE,
+	warning = FALSE,
+	fig.width = 8, 
+  fig.height = 6,
+  out.width = "90%"
+)
+
+options(
+  ggplot2.continuous.colour = "viridis",
+  ggplot2.continuous.fill = "viridis"
+)
+
+scale_colour_discrete = scale_colour_viridis_d
+scale_fill_discrete = scale_fill_viridis_d
+
+theme_set(theme_minimal() + theme(legend.position = "bottom"))
+```
+### Project Title
+
+### About the Data: 
+We searched for "Rohingya" on Google News from 01/01/2010 to 01/01/2021 to gather news articles that were published during the past decade. Using Parsehub, which is ... , I collected the title, publisher, publication date, the url, and a short description of each news article.  
+
+``` {r importing data}
+news_data = read_csv (file = "./rohingya_news_data_20200104.csv",
+                     col_types = cols(
+                       Date = col_date(format = "%mm/%dd/%yy"),
+                       `Subways: % Change From 2019 Equivalent Day` = col_number(),
+                       `Buses: % Change From 2019 Equivalent Day` = col_number(),
+                       `Bridges and Tunnels: % Change From 2019 Equivalent Day` = col_number()
+                       ) #only changed the formats of important variables 
+) %>%
+  janitor::clean_names()
+skimr::skim(mta_data)
+mta_data =
+  mta_data %>%
+  subset(select = -c(lirr_total_estimated_ridership, lirr_percent_change_from_2019_monthly_weekday_saturday_sunday_average, metro_north_total_estimated_ridership, metro_north_percent_change_from_2019_monthly_weekday_saturday_sunday_average, access_a_ride_total_scheduled_trips, access_a_ride_percent_change_from_2019_monthly_weekday_saturday_sunday_average, bridges_and_tunnels_total_traffic, bridges_and_tunnels_percent_change_from_2019_equivalent_day))
+#exclude data for lirr, metronorth, access-a-ride, bridges & tunnel
+```
+Now we will calculate the actual 2019 ridership based on the percent change data
+
+``` {r calculate 2019 ridership bus subway}
+mta_data = mta_data %>%
+  mutate( 
+    'subway_2019' = subways_total_estimated_ridership/(1+(subways_percent_change_from_2019_equivalent_day/100)),
+    'bus_2019'=
+      buses_total_estimated_ridership/(1+(buses_percent_change_from_2019_equivalent_day/100))
+    ) %>%
+  rename(
+    "subway_2020" = subways_total_estimated_ridership,
+    "subway_pct_change" = subways_percent_change_from_2019_equivalent_day,
+    "bus_2020" = buses_total_estimated_ridership,
+    "bus_pct_change" = buses_percent_change_from_2019_equivalent_day
+    )
+```
+
+```{r plotting general trends of MTA ridership 2019 & 2020}
+#change date to date format and order by date
+plot_mta =
+  mta_data %>%
+  mutate(
+    date= as.Date(date,format = "%m/%d")) %>%
+  arrange(date)
+#create a text_label label
+text_label =
+  plot_mta %>%
+  mutate(text_label = str_c("percent change from 2019 to 2020: ", subway_pct_change)) %>%
+  select(date, text_label)
+
+#graph for subway 
+#pivoting
+plot_subway = 
+  plot_mta %>%
+  select(subway_2020, subway_2019, date) %>%
+  melt(., id.vars = "date") %>%
+#merge based on month 
+  merge(text_label, by = "date") %>%
+  #plotting
+  plot_ly(
+    x = ~date, y = ~value, type = "scatter", mode = "markers",
+    color = ~variable, text = ~text_label) %>%
+  layout (
+    title = "Subway Ridership Trends 2019 - 2020",
+    xaxis = list(title ="Month/Day", tickformat = "%m/%d"), #drop year
+    yaxis = list(title="Ridership"))  %>%
+  add_lines(x =as.Date("2020-03-01"), line = list(dash="dot", color = 'red', width=0.5, opacity = 0.5),name = 'First case on 3/1') %>%
+  add_lines(x =as.Date("2020-04-07"), line = list(dash="dot", color = 'red', width=0.5, alpha = 0.5),name = '100K cases in NYC on 04/07') %>%
+  add_lines(x =as.Date("2020-05-26"), line = list(dash="dot", color = 'red', width=0.5, alpha = 0.5),name = '200K cases in NYC on 05/26')
+#graph for bus
+
+#pivoting
+plot_bus = 
+  plot_mta %>%
+  select(bus_2020,bus_2019,date) %>%
+  melt(., id.vars = "date") %>% 
+#merge based on month 
+  merge(text_label, by = "date") %>%
+#plotting
+  plot_ly(
+    x = ~date, y = ~value, type = "scatter", mode = "markers",
+    color = ~variable, text = ~text_label) %>%
+  layout (
+    title = "Bus Ridership Trends 2019 - 2020",
+    xaxis = list(title ="Month/Day", tickformat = "%m/%d"),
+    yaxis = list(title="Ridership")) %>%
+  add_lines(x =as.Date("2020-03-01"), line = list(dash="dot", color = 'red', width=0.5, opacity = 0.5),name = 'First case on 3/1') %>%
+  add_lines(x =as.Date("2020-04-07"), line = list(dash="dot", color = 'red', width=0.5, alpha = 0.5),name = '100K cases in NYC on 04/07') %>%
+  add_lines(x =as.Date("2020-05-26"), line = list(dash="dot", color = 'red', width=0.5, alpha = 0.5),name = '200K cases in NYC on 05/26')
+
+#ggplot for subway
+plot_subway_2 = 
+  plot_mta %>%
+  select(subway_2020, subway_2019, date) %>%
+  melt(., id.vars = "date") %>%
+  ggplot(aes(x=date, y=value, color=variable)) +
+  geom_point(alpha=0.5) +
+  geom_smooth(se = FALSE)  +
+  xlab("Month/Day") +
+  ylab("Ridership") +
+  ggtitle("Subway Ridership Trends 2019 - 2020") +
+  geom_vline(xintercept=as.Date("2020-03-01"), linetype="dotted", color = 'red')+
+  geom_vline(xintercept=as.Date("2020-04-07"), linetype="dotted", color = 'red')+
+  geom_vline(xintercept=as.Date("2020-05-26"), linetype="dotted", color = 'red')+
+  geom_text(x=as.Date("2020-03-01"), y=6100000, label ="First case", angle=90, vjust = 1.2, size=3,color='black') +
+  geom_text(x=as.Date("2020-04-07"), y=6100000, label ='100K cases', angle=90, vjust = 1.2, size=3,color='black')+
+  geom_text(x=as.Date("2020-05-26"), y=6100000, label ='200K cases', angle=90, vjust = 1.2, size=3,color='black')
+
+#ggplot for bus
+plot_bus_2 = 
+  plot_mta %>%
+  select(bus_2020, bus_2019,date) %>%
+  melt(., id.vars = "date") %>% 
+  ggplot(aes(x=date, y=value, color=variable)) +
+  geom_point(alpha=0.5) +
+  geom_smooth(se = FALSE) +  
+  xlab("Month/Day") +
+  ylab("Ridership") +
+  ggtitle("Bus Ridership Trends 2019 - 2020") +
+  geom_vline(xintercept=as.Date("2020-03-01"), linetype="dotted", color = 'red')+
+  geom_vline(xintercept=as.Date("2020-04-07"), linetype="dotted", color = 'red')+
+  geom_vline(xintercept=as.Date("2020-05-26"), linetype="dotted", color = 'red')+
+  geom_text(x=as.Date("2020-03-01"), y=2400000, label ="First case", angle=90, vjust = 1.2, size=3,color='black') +
+  geom_text(x=as.Date("2020-04-07"), y=2400000, label ='100K cases', angle=90, vjust = 1.2, size=3,color='black')+
+  geom_text(x=as.Date("2020-05-26"), y=2400000, label ='200K cases', angle=90, vjust = 1.2, size=3,color='black')
+
+#see the two graphs together:
+plot_bus
+plot_subway
+(plot_bus_2+plot_subway_2)
+```
+#source for the vertical lines:
+https://edition.cnn.com/2020/03/02/us/new-york-coronavirus-first-case/index.html (3/1)
+https://www1.nyc.gov/site/doh/covid/covid-19-data.page
+
+Let us first look at the average ridership of subway during 2019 and 2020 for each month
+```{r}
+#separate by month and day
+mta_data = 
+  mta_data %>%
+  arrange(date) %>%
+  separate(date, into = c("month", "day", "year"))%>%
+  mutate(month = as.numeric(month),
+         day = as.numeric(day)) %>%
+  select(-c(year)) #drop year column
+
+mta_subway_ridership =
+  mta_data %>%
+  group_by(month)%>%
+  summarize(
+    avg_subway_2019 = mean(subway_2019),
+    avg_subway_2020 = mean(subway_2020)
+  )
+mta_subway_ridership%>%knitr::kable()
+```
+Let us now compare 2019 and 2020 ridership by month and check if they are significantly different.
+
+First we need to create our dataframe that nests the observations for 2019 and 2020 subway ridership for each month.
+```{r}
+mta_2019_sample = 
+  mta_data%>%
+  select(month, subway_2019) %>%
+  nest(subway_2019)%>%
+  mutate("subway_2019_sample" = data)%>%
+  select(-data)
+
+mta_2020_sample = 
+  mta_data%>%
+  select(month, subway_2020)%>%
+  nest(subway_2020)%>%
+  mutate("subway_2020_sample" = data)%>%
+  select(-data)
+
+mta_samples = 
+  bind_cols(mta_2019_sample, mta_2020_sample)%>%
+  select(-month...3)%>%
+  rename(month = month...1)
+```
+
+Now we need to perform a t-test to check if the subway ridership is signficantly different between 2019 and 2020 data. We map across each month to test if the values of the samples of 2019 and 2020 ridership data differs for each month. We then compare the p-value obtained from the tests to determine whether the differene in ridership numbers is significant or not
+
+```{r}
+mta_t_test = 
+  mta_samples%>%
+  mutate(t_test = map2(.x = subway_2019_sample, .y = subway_2020_sample, ~t.test(.x , .y) ),
+         t_test_results = map(t_test, broom::tidy))%>%
+  select(month, t_test_results)%>%
+  unnest(t_test_results)%>%
+  select(month,p.value)%>%
+  mutate(difference = case_when(
+    p.value >= 0.05 ~ "insignificant",
+    p.value < 0.05 ~ "significant"),
+    p.value = ifelse(
+    p.value< 0.001,"<0.001",round(p.value, digits = 4))) %>%
+  arrange(month) 
+
+knitr::kable(mta_t_test, digits = 3)
+```
+We can merge the t-test results with the average riderships from before..
+
+```{r}
+mta_year_ttest = 
+  bind_cols(mta_subway_ridership, mta_t_test)%>%
+  select(-month...4)%>%
+  rename(month = month...1) 
+knitr::kable(mta_year_ttest)
+  
+```
+
+Using this final dataframe, we can plot a graph showing the average ridership for each month comparing the 2019 to 2020 ridership and then labelling the signficance or lack of significance in ridership differences..
+
+[Plot needs to be created]
+``` {r plotting}
+#create a text_label label
+text_label =
+  mta_year_ttest %>%
+  mutate(text_label = str_c("p-value: ",p.value, "\nDifference: ", difference)) %>%
+  select(month, text_label)
+#pivoting
+plot_ttest = 
+  mta_subway_ridership %>%
+  rename(
+    "2020"=avg_subway_2020,
+    "2019"=avg_subway_2019
+  ) %>%
+  melt(., id.vars = "month") %>%
+#merge based on month 
+  merge(text_label, by = "month")
+
+#plotting
+plot_ttest %>%
+plot_ly(
+    x = ~month, y = ~value, type = "scatter", mode = "lines+markers",
+    color = ~variable, text = ~text_label) %>%
+  layout (
+    title = "Monthly Average Ridership of Subway 2019 vs 2020",
+    xaxis = list(title ="Months",range=c(3,11)),
+    yaxis = list(title="Average Ridership"))
+```
+
+Let us now compare subway and bus ridership in 2020 by month and check if they are significantly different.
+
+First we need to propose a regression model for subway ridership in 2020.
+As the outcome (subway ridership) is continuous, we can fit a linear regression model. 
+
+```{r}
+subway_ridership = lm(subway_2020 ~ month, data = mta_data)
+subway_ridership %>% 
+  broom::tidy() 
+
+#to tidy the output and get only the intercept, slope and p-values 
+subway_ridership %>% 
+  broom::tidy() %>% 
+  select(term, estimate, p.value) %>% 
+  knitr::kable(digits = 3)
+
+#to plot for regression line 
+  ggplot(mta_data, aes(month, subway_2020)) +
+  geom_point() +
+  stat_smooth(method = lm)
+```
+
+* Show a plot of model residuals against fitted values – use add_predictions and add_residuals in making this plot.
+
+```{r}
+mta_data %>% 
+  modelr::add_predictions(subway_ridership) %>% 
+  modelr::add_residuals(subway_ridership) %>% 
+  ggplot(aes(x = pred, y = resid)) + geom_point() + 
+  labs(x = "Predicted value", 
+       y = "Residual")
+```
+
+Next, we need to propose a regression model for bus ridership in 2020.
+As the outcome (bus ridership) is continuous, we can fit a linear regression model. 
+
+```{r}
+bus_ridership = lm(bus_2020 ~ month, data = mta_data)
+bus_ridership %>% 
+  broom::tidy() 
+
+#Now we need to tidy the output and get only the intercept, slope and p-values 
+bus_ridership %>% 
+  broom::tidy() %>% 
+  select(term, estimate, p.value) %>% 
+  knitr::kable(digits = 3)
+
+#to plot for regression line
+ggplot(mta_data, aes(month, bus_2020)) +
+  geom_point() +
+  stat_smooth(method = lm)
+```

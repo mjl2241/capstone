@@ -1,0 +1,95 @@
+---
+title: "NYT_api"
+output: github_document
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+# loading the packages:
+library(dplyr) # for pipes and the data_frame function
+library(rvest) # webscraping
+library(stringr) # to deal with strings and to clean up our data
+library(rvest)
+library(tidyverse)
+library(RJSONIO)
+library (RCurl)
+library(tidyr)
+library(jsonlite)
+```
+
+```{r}
+#scrapping news articles on the NYT using API
+#https://rpubs.com/hmgeiger/373949
+#### scrapeNYT_API2.R
+NYTIMES_KEY <- "WxYCzBVsF6ISGQ1ZxWPLvaRfPfC11qhF"
+
+#term <- "Rohingya+refugee"
+term <- "Rohingya"
+begin_date <- "20100101"
+end_date <- "20210101"
+
+baseurl <- paste0("http://api.nytimes.com/svc/search/v2/articlesearch.json?q=",term,
+                  "&begin_date=",begin_date,"&end_date=",end_date,
+                  "&facet_filter=true&api-key=",NYTIMES_KEY, sep="")
+
+initialQuery <- fromJSON(baseurl)
+maxPages <- round((initialQuery$response$meta$hits[1] / 10)-1) 
+
+pages_rohingya <- vector("list",length=maxPages)
+
+for(i in 0:maxPages){
+    nytSearch <- fromJSON(paste0(baseurl, "&page=", i), flatten = TRUE) %>% data.frame() 
+    pages_rohingya[[i+1]] <- nytSearch 
+    Sys.sleep(5) #I was getting errors more often when I waited only 1 second between calls. 5 seconds seems to work better.
+}
+
+articles_rohingya <- rbind_pages(pages_rohingya)
+
+save(articles_rohingya,file="NYT_articles_rohingya.Rdata")
+```
+A search term : "Rohingya Refugee" produced 537 articles 
+" :"Rohingya" produced 1050 articles
+Exploring and cleaning data frames
+
+```{r}
+colnames(articles_rohingya) <- str_replace(colnames(articles_rohingya),
+                pattern='response\\.',replace='')
+colnames(articles_rohingya) <- str_replace(colnames(articles_rohingya),
+                pattern='docs\\.',replace='')
+
+colnames(articles_rohingya)
+columns_to_remove <- c("status","copyright","lead_paragraph", "print_section","print_page", "keywords", "source","multimedia","document_type", "slideshow_credits", "news_desk","subsection_name","_id","word_count","uri", "headline.kicker", "headline.content_kicker", "headline.print_headline", "headline.name", "headline.seo", "headline.sub",grep('byline',colnames(articles_rohingya),value=TRUE), grep('meta',colnames(articles_rohingya),value=TRUE))
+columns_to_keep <- setdiff(colnames(articles_rohingya),columns_to_remove)
+
+articles_rohingya_abstracts <- as.vector(articles_rohingya$abstract)
+
+articles_rohingya_CLEAN <- articles_rohingya %>% select(columns_to_keep)
+```
+The results show a total of 1050 articles that were published between 01/01/2010 to 01/01/2021, ordered by date. 
+```{r}
+articles_rohingya_CLEAN $pub_date <- as.Date(substr(articles_rohingya_CLEAN$pub_date,1,10))
+articles_rohingya_CLEAN <- articles_rohingya_CLEAN%>% arrange(pub_date)
+articles_rohingya_CLEAN
+unique(articles_rohingya_CLEAN[c("section_name")])
+```
+deleting opinions, travel, blogs, corrections, education, daily briefings (NYT Now), Times Topics, Magazine, Sunday reviews, briefings, Times Insider, The Learning Network, Today's paper, corrections, question of the day, book reviews, obituaries, reader center, lens, climate, arts, movies, style, science. 
+```{r}
+articles <-
+  articles_rohingya_CLEAN %>%
+  filter(section_name == "World"|
+         section_name == "New York"|
+         section_name == "Business Day"|
+         section_name == "Multimedia/Photos"|
+         section_name == "U.S."|
+         section_name == "Technology"|
+        section_name == "podcasts")
+articles[duplicated(articles$headline.main),]
+articles <-
+  articles[-c(109),] #deleted one duplicate article
+```
+Our resulting sample includes 493 articles from The New York Times
+```{r}
+library(ggplot2)
+ggplot(articles_rohingya_CLEAN, aes(x=Date))+ geom_histogram() + xlab("Date")
+
+```
+

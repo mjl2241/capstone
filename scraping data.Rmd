@@ -1,0 +1,102 @@
+---
+title: "scraping News articles"
+output: github_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+# loading the packages:
+library(dplyr) # for pipes and the data_frame function
+library(rvest) # webscraping
+library(stringr) # to deal with strings and to clean up our data
+library(rvest)
+library(tidyverse)
+library(RJSONIO)
+library (RCurl)
+library(tidyr)
+library(jsonlite)
+
+```
+
+```{r}
+#using news.google
+
+  html_dat <- read_html(paste0(
+  "https://news.google.com/search?q=rohingya%20when%3A7y&hl=en-US&gl=US&ceid=US%3Aen"))
+
+  dat <- data.frame(Link = html_dat %>%
+                      html_nodes('.VDXfz') %>% 
+                      html_attr('href')) %>% 
+    mutate(Link = gsub("./articles/","https://news.google.com/articles/",Link))
+
+  news_dat <- data.frame(
+    Title = html_dat %>%
+      html_nodes('.DY5T1d') %>% 
+      html_text(),
+    Date = html_dat %>%
+      html_nodes('.WW6dff') %>% 
+      html_attr("datetime"),
+   Publisher = html_dat %>%
+      html_nodes('.wEwyrc ') %>% 
+      html_text(),
+    Link = dat$Link,
+    Description =  html_dat %>%
+      html_nodes('.Rai5ob') %>% 
+      html_text()
+
+ )
+news_dat
+news_dat %>%
+  arrange(Date)
+```
+```{r}
+
+```
+
+```{r attempt 2}
+#using google.com and then clicking on news section
+
+html_dat <- read_html(paste0("https://www.google.com/search?q=rohingya&hl=en&tbs=cdr:1,cd_min:1/1/2010,cd_max:01/01/2021,sbd:1&tbm=nws&sxsrf=ALeKk02HazkPh2XjngXRIlqUQOuFytvFFw:1609762079461&source=lnt&sa=X&ved=0ahUKEwje36yHn4LuAhUBEqYKHeTcC8YQpwUIKA&biw=875&bih=764&dpr=1"))
+news_dat <- data.frame(
+    Title = html_dat %>%
+      html_nodes('.JheGif') %>% 
+      html_text(),
+    Date = html_dat %>%
+      html_nodes('.wxp1Sb') %>% 
+      html_text(),
+   Publisher = html_dat %>%
+      html_nodes('.WF4CUc ') %>% 
+      html_text(),
+    #Link = dat$Link,
+    Description =  html_dat %>%
+      html_nodes('.Y3v8qd') %>% 
+      html_text()
+
+ )
+news_dat
+#  return(news_dat)
+#}
+
+#news('rohingya')
+
+```
+``` {r}
+#another approach
+
+# extracting the com vehicles
+# we pass the nodes in html_nodes and extract the text from the last one 
+# we use stringr to delete strings that are not important
+vehicle_all <- google %>% 
+  html_nodes("div div div main c-wiz div div div article div div div") %>% 
+  html_text() %>%
+  str_subset("[^more_vert]") %>%
+  str_subset("[^share]") %>%
+  str_subset("[^bookmark_border]")
+vehicle_all[1:10] # take a look at the first ten
+
+#  dat <- data.frame(Link = html_dat %>%
+ #                     html_nodes('.jBgGLd') %>% 
+  #                    html_attr('href')) %>% 
+   # mutate(Link = gsub("./articles/","https://news.google.com/articles/",Link))
+```
+

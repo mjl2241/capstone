@@ -1,0 +1,93 @@
+---
+title: "NYT_api"
+output: github_document
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+# loading the packages:
+library(dplyr) # for pipes and the data_frame function
+library(rvest) # webscraping
+library(stringr) # to deal with strings and to clean up our data
+library(rvest)
+library(tidyverse)
+library(RJSONIO)
+library (RCurl)
+library(tidyr)
+library(jsonlite)
+library(httr)
+```
+scrapping news articles on the Guardian using API
+guardian_key <- "702f45d7-a2f9-4c88-8ba4-695cc9e9c275"
+term <- "Rohingya+refugee"
+term <- "Rohingya"
+from-date <- "2010-01-01"
+to-date <- "2021-01-01"
+pagesize=200
+```{r}
+url <- paste0("https://content.guardianapis.com/search?q=rohingya&from-date=2010-01-01&to-date=2021-01-01&page-size=200&api-key=702f45d7-a2f9-4c88-8ba4-695cc9e9c275",sep="")
+
+df <- fromJSON(url)
+maxPages <- df$response$pages #check the number of pages
+gu_pages_rohingya <- vector("list",length=maxPages)
+
+for(i in 1:maxPages){
+    gu_Search <- fromJSON(paste0(url, "&page=", i), flatten = TRUE) %>% data.frame() 
+    gu_pages_rohingya[[i+1]] <- gu_Search 
+    Sys.sleep(5) #I was getting errors more often when I waited only 1 second between calls. 5 seconds seems to work better.
+}
+
+gu_articles_rohingya <- rbind_pages(gu_pages_rohingya)
+
+save(articles_rohingya,file="gu_articles_rohingya.Rdata")
+```
+A search of articles from 2010/01/01 to 2021/01/01, "Rohingya" resulted in 1043 total articles.
+A search of articles from the same time frame, "Rohingya Refugee" produced 455 total articles.
+
+Exploring and cleaning data frames
+```{r}
+colnames(gu_articles_rohingya) <- str_replace(colnames(gu_articles_rohingya),
+                pattern='response.',replace='')
+colnames(gu_articles_rohingya) <- str_replace(colnames(gu_articles_rohingya),
+                pattern='response.results.',replace='')
+#.webPublicationDate, .webTitle,".webUrl", ".pillarName" 
+colnames(gu_articles_rohingya)
+columns_to_remove <- c(
+"status","userTier","total","startIndex","pageSize", "currentPage", "pages", "orderBy", ".id",".type", ".sectionId", ".sectionName",  ".apiUrl", ".isHosted", ".pillarId",value=TRUE)
+columns_to_keep <- setdiff(colnames(gu_articles_rohingya),columns_to_remove)
+
+gu_articles_rohingya_CLEAN <- gu_articles_rohingya %>% select(columns_to_keep)
+```
+The results show a total of 1050 articles that were published between 01/01/2010 to 01/01/2021, ordered by date. 
+```{r}
+gu_articles_rohingya_CLEAN =
+  rename(gu_articles_rohingya_CLEAN ,
+    Date=.webPublicationDate, 
+    Title = .webTitle,
+    url =.webUrl, 
+    Type = .pillarName
+  )
+gu_articles_rohingya_CLEAN$Date <- as.Date(substr(gu_articles_rohingya_CLEAN$Date,1,10))
+gu_articles_rohingya_CLEAN <- 
+  gu_articles_rohingya_CLEAN%>% 
+  arrange(Date)
+
+unique(gu_articles_rohingya_CLEAN[c("Type")])
+
+```
+deleted opinions, arts ,lifestyle, sports
+```{r}
+articles <-
+  gu_articles_rohingya_CLEAN %>%
+  filter(Type == "News")
+articles[duplicated(articles$Title),]
+articles <-
+  articles[-c(738),] #deleted one duplicate article
+```
+Our resulting sample includes 814 articles 
+```{r}
+#graphing
+library(ggplot2)
+ggplot(articles, aes(x=Date))+ geom_histogram() + xlab("Date")
+
+```
+
